@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Галактика с интерфейсом управления</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        .button-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+        }
+        .button {
+            padding: 10px;
+            margin: 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .stats-container {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 100;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 12px;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 300px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        camera.position.set(30, 20, 20);
+        controls.update();
+
+        // Параметры галактики
+        const galaxyParams = {
+            count: 70000,
+            arms: 1,
+            radius: 24,
+            spread: 1.8,
+            size: 0.01,
+            colorRandomness: 1,
+            rotationSpeed: 0.0005,
+        };
+
+        let galaxy;
+        const generateGalaxy = () => {
+            if (galaxy) scene.remove(galaxy);
+
+            const galaxyGeometry = new THREE.BufferGeometry();
+            const galaxyPositions = [];
+            const galaxyColors = [];
+            const galaxySizes = [];
+            const randomValues = [];
+
+            for (let i = 0; i < galaxyParams.count; i++) {
+                const radius = Math.pow(Math.random(), 3) * galaxyParams.radius;
+                const angle = radius * galaxyParams.arms + Math.random() * 3;
+                const spreadFactor = (galaxyParams.spread - radius / galaxyParams.radius) * 2;
+                const offsetX = (Math.random() - 0.5) * spreadFactor;
+                const offsetY = (Math.random() - 0.5) * spreadFactor;
+                const offsetZ = (Math.random() - 0.5) * spreadFactor;
+
+                const x = Math.cos(angle) * radius + offsetX;
+                const y = offsetY;
+                const z = Math.sin(angle) * radius + offsetZ;
+
+                galaxyPositions.push(x, y, z);
+
+                // Цвет с учетом случайности
+                const colorFactor = 1 - radius / galaxyParams.radius;
+                galaxyColors.push(
+                    colorFactor + (Math.random() - 0.5) * galaxyParams.colorRandomness,
+                    colorFactor * 0.5 + 0.5 + (Math.random() - 0.5) * galaxyParams.colorRandomness,
+                    1
+                );
+
+                // Добавляем размер для мерцания
+                galaxySizes.push(galaxyParams.size * (Math.random() + 0.5));
+                randomValues.push(Math.random());
+            }
+
+            galaxyGeometry.setAttribute('position', new THREE.Float32BufferAttribute(galaxyPositions, 3));
+            galaxyGeometry.setAttribute('color', new THREE.Float32BufferAttribute(galaxyColors, 3));
+            galaxyGeometry.setAttribute('size', new THREE.Float32BufferAttribute(galaxySizes, 1));
+            galaxyGeometry.setAttribute('randomValue', new THREE.Float32BufferAttribute(randomValues, 1));
+
+            const galaxyMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0.0 },
+                },
+                vertexShader: `
+                    attribute float size;
+                    attribute float randomValue;
+                    varying vec3 vColor;
+                    varying float vRandomValue;
+                    void main() {
+                        vColor = color;
+                        vRandomValue = randomValue;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * (300.0 / -mvPosition.z);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform float time;
+                    varying vec3 vColor;
+                    varying float vRandomValue;
+                    void main() {
+                        float pulse = 0.5 + 0.5 * sin(time + vRandomValue * 10.0);
+                        gl_FragColor = vec4(vColor * pulse, 1.0);
+                    }
+                `,
+                transparent: true,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+            });
+
+            galaxy = new THREE.Points(galaxyGeometry, galaxyMaterial);
+            scene.add(galaxy);
+        };
+
+        generateGalaxy();
+
+        const starCount = 5000;
+        const starGeometry = new THREE.BufferGeometry();
+        const starPositions = [];
+        const starColors = [];
+
+        for (let i = 0; i < starCount; i++) {
+            const x = Math.random() * 200 - 100;
+            const y = Math.random() * 200 - 100;
+            const z = Math.random() * 200 - 100;
+            starPositions.push(x, y, z);
+
+            starColors.push(Math.random(), Math.random(), Math.random());
+        }
+
+        starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+        starGeometry.setAttribute('color', new THREE.Float32BufferAttribute(starColors, 3));
+
+        const starMaterial = new THREE.PointsMaterial({
+            size: 0.2,
+            vertexColors: true,
+        });
+
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+
+        // Слежение за точками
+        let selectedPoint = null;
+
+        function onMouseClick(event) {
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.updateMatrixWorld();
+            raycaster.setFromCamera(mouse, camera);
+
+            const intersects = raycaster.intersectObject(galaxy);
+
+            if (intersects.length > 0) {
+                selectedPoint = intersects[0].point;
+                camera.position.set(selectedPoint.x, selectedPoint.y, selectedPoint.z + 10);
+                controls.target.set(selectedPoint.x, selectedPoint.y, selectedPoint.z);
+            } else {
+                selectedPoint = null;
+                camera.position.set(30, 20, 20);
+                controls.target.set(0, 0, 0);
+            }
+        }
+
+        window.addEventListener('click', onMouseClick);
+
+        // Добавление космических кораблей
+        const spaceshipMaterial = new THREE.MeshBasicMaterial({ color: 0xfff600 });
+        const spaceshipSize = 0.2;
+        let spaceships = [];
+        let trails = [];
+
+        const randomPositionInGalaxy = () => {
+            const radius = Math.random() * galaxyParams.radius;
+            const angle = Math.random() * Math.PI * 2;
+            const x = Math.cos(angle) * radius;
+            const y = Math.random() * galaxyParams.spread - galaxyParams.spread / 2;
+            const z = Math.sin(angle) * radius;
+            return { x, y, z };
+        };
+
+        const createSpaceship = () => {
+            // Начальная позиция (случайная точка в галактике)
+            const start = randomPositionInGalaxy();
+
+            // Конечная позиция (другая случайная точка в галактике)
+            let end = randomPositionInGalaxy();
+            while (start.x === end.x && start.y === end.y && start.z === end.z) {
+                end = randomPositionInGalaxy();
+            }
+
+            const spaceshipGeometry = new THREE.SphereGeometry(spaceshipSize, 16, 16);
+            const spaceship = new THREE.Mesh(spaceshipGeometry, spaceshipMaterial);
+
+            spaceship.position.set(start.x, start.y, start.z);
+            scene.add(spaceship);
+
+            // Массив для хранения точек шлейфа
+            const trailPoints = [];
+            const maxTrailLength = 50;
+            const trailGeometry = new THREE.BufferGeometry();
+            const trailMaterial = new THREE.LineBasicMaterial({ color: 0xfff600, transparent: true, opacity: 0.6 });
+            const trail = new THREE.Line(trailGeometry, trailMaterial);
+            scene.add(trail);
+
+            // Анимация движения по дуге
+            let t = 0;
+            const speed = Math.random() * 0.0001 + 0.01;
+
+            const curve = new THREE.QuadraticBezierCurve3(
+                new THREE.Vector3(start.x, start.y, start.z),
+                new THREE.Vector3(
+                    (start.x + end.x) / 2 + (Math.random() - 0.5) * 5,
+                    (start.y + end.y) / 2 + (Math.random() - 0.5) * 5,
+                    (start.z + end.z) / 2 + (Math.random() - 0.5) * 5
+                ),
+                new THREE.Vector3(end.x, end.y, end.z)
+            );
+
+            function animateSpaceship() {
+                t += speed;
+
+                if (t > 1) {
+                    scene.remove(spaceship); // Удалить корабль после того как он пройдет путь
+                    fadeOutTrail(trail);
+                    return;
+                }
+
+                const position = curve.getPoint(t);
+                spaceship.position.set(position.x, position.y, position.z);
+
+                // Добавить текущую позицию в шлейф
+                trailPoints.push(new THREE.Vector3(position.x, position.y, position.z));
+                if (trailPoints.length > maxTrailLength) {
+                    trailPoints.shift(); // Удалить самую старую точку, если шлейф слишком длинный
+                }
+
+                trailGeometry.setFromPoints(trailPoints);
+
+                requestAnimationFrame(animateSpaceship);
+            }
+
+            animateSpaceship();
+            spaceships.push(spaceship);
+            trails.push(trail);
+        };
+
+        const fadeOutTrail = (trail) => {
+            let opacity = 0.6;
+            const fadeOut = () => {
+                opacity -= 0.01;
+                if (opacity <= 0) {
+                    scene.remove(trail);
+                    return;
+                }
+                trail.material.opacity = opacity;
+                requestAnimationFrame(fadeOut);
+            };
+            fadeOut();
+        };
+
+        // Создание космического корабля каждую секунду
+        setInterval(createSpaceship, 3000);
+
+        // Параметры для HUD
+        const hudParams = {
+            showAxes: true,
+            showGrid: true,
+            showRings: true,
+            showNumbers: true,
+            hudOpacity: 0.3,
+        };
+
+        // Цвет для всех линий
+        const lineColor = 0xffffff; // Белый цвет
+
+        // Координатные оси
+        const axesHelper = new THREE.AxesHelper(50);
+        axesHelper.material = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: hudParams.hudOpacity });
+        scene.add(axesHelper);
+
+        // Сетка
+        const gridHelper = new THREE.GridHelper(200, 50);
+        gridHelper.material.color.set(lineColor);
+        gridHelper.material.opacity = hudParams.hudOpacity;
+        gridHelper.material.transparent = true;
+        scene.add(gridHelper);
+
+        // Кольца и орбиты
+        const ringMaterial = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: hudParams.hudOpacity });
+        const rings = [];
+        for (let i = 1; i <= 5; i++) {
+            const ringGeometry = new THREE.RingGeometry(i * 5, i * 5.1, 64);
+            const ring = new THREE.Line(ringGeometry, ringMaterial);
+            ring.rotation.x = Math.PI / 2;
+            rings.push(ring);
+            scene.add(ring);
+        }
+
+        // Цифры для координат
+        const loader = new THREE.FontLoader();
+        const textMeshes = [];
+        loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function (font) {
+            const createText = (text, x, y, z) => {
+                const textGeometry = new THREE.TextGeometry(text, {
+                    font: font,
+                    size: 1,
+                    height: 0.1
+                });
+                const textMaterial = new THREE.MeshBasicMaterial({ color: lineColor, transparent: true, opacity: hudParams.hudOpacity });
+                const mesh = new THREE.Mesh(textGeometry, textMaterial);
+                mesh.position.set(x, y, z);
+                textMeshes.push(mesh);
+                scene.add(mesh);
+            };
+
+            for (let i = -50; i <= 50; i += 10) {
+                createText(i.toString(), i, 0, 0);
+                createText(i.toString(), 0, i, 0);
+                createText(i.toString(), 0, 0, i);
+            }
+        });
+
+        // Функция для обновления прозрачности HUD
+        const updateHudOpacity = () => {
+            axesHelper.material.opacity = hudParams.hudOpacity;
+            gridHelper.material.opacity = hudParams.hudOpacity;
+            rings.forEach(ring => ring.material.opacity = hudParams.hudOpacity);
+            textMeshes.forEach(mesh => mesh.material.opacity = hudParams.hudOpacity);
+        };
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (galaxy) {
+                galaxy.rotation.y += galaxyParams.rotationSpeed;
+                galaxy.material.uniforms.time.value += 0.01;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Интерфейс управления
+        const gui = new dat.GUI();
+        gui.add(galaxyParams, 'count', 1000, 100000, 1000).name('Количество точек').onChange(generateGalaxy);
+        gui.add(galaxyParams, 'arms', 1, 10, 1).name('Количество рукавов').onChange(generateGalaxy);
+        gui.add(galaxyParams, 'radius', 5, 50, 1).name('Радиус галактики').onChange(generateGalaxy);
+        gui.add(galaxyParams, 'spread', 0.1, 5, 0.1).name('Разброс точек').onChange(generateGalaxy);
+        gui.add(galaxyParams, 'size', 0.001, 0.1, 0.001).name('Размер точек').onChange(generateGalaxy);
+        gui.add(galaxyParams, 'colorRandomness', 0, 1, 0.01).name('Случайность цвета').onChange(generateGalaxy);
+        gui.add(galaxyParams, 'rotationSpeed', 0.0001, 0.01, 0.0001).name('Скорость вращения').onChange(generateGalaxy);
+
+        // Управление HUD
+        const hudFolder = gui.addFolder('HUD');
+        hudFolder.add(hudParams, 'showAxes').name('Показать оси').onChange(value => { axesHelper.visible = value; });
+        hudFolder.add(hudParams, 'showGrid').name('Показать сетку').onChange(value => { gridHelper.visible = value; });
+        hudFolder.add(hudParams, 'showRings').name('Показать кольца').onChange(value => { rings.forEach(ring => ring.visible = value); });
+        hudFolder.add(hudParams, 'showNumbers').name('Показать цифры').onChange(value => { textMeshes.forEach(mesh => mesh.visible = value); });
+        hudFolder.add(hudParams, 'hudOpacity', 0.1, 1, 0.1).name('Прозрачность HUD').onChange(updateHudOpacity);
+
+        // Кнопки для ссылок
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'button-container';
+        document.body.appendChild(buttonContainer);
+
+        const linkButton1 = document.createElement('button');
+        linkButton1.className = 'button';
+        linkButton1.textContent = 'STAR_SYSTEM';
+        linkButton1.onclick = () => window.open('https://gamzilaz.github.io/', '_blank');
+        buttonContainer.appendChild(linkButton1);
+
+        const linkButton2 = document.createElement('button');
+        linkButton2.className = 'button';
+        linkButton2.textContent = 'STARMAP';
+        linkButton2.onclick = () => window.open('https://gamzilaz.github.io/STARMAP_TEST/', '_blank');
+        buttonContainer.appendChild(linkButton2);
+
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+
+        // Статистический блок
+        const statsContainer = document.createElement('div');
+        statsContainer.className = 'stats-container';
+        document.body.appendChild(statsContainer);
+
+        const messages = [
+            'В ГАЛАКТИКЕ НАЧАЛАСЬ НОВАЯ ВОЙНА. ВСЕ РАСЫ ПРИГОТОВИЛИСЬ К СРАЖЕНИЮ, И СРАЖЕНИЕ ПРОДОЛЖАЕТСЯ НА МНОГИХ ПЛАНЕТАХ. НАДЕЖДА НА МИР ЕЩЕ ЖИВА, НО ЖЕРТВЫ УВЕЛИЧИВАЮТСЯ С КАЖДЫМ ДНЕМ. ПОСТРАДАВШИЕ ПРОСЯТ ПОМОЩИ, НО СИТУАЦИЯ СТАНОВИТСЯ ВСЕ БОЛЕЕ КРИТИЧНОЙ. НУЖНЫ МИРНЫЕ ПЕРЕГОВОРЫ.',
+            'ПОПУЛЯЦИЯ ВЫРОСЛА НА 10%. НОВЫЕ ТЕХНОЛОГИИ ПОЗВОЛИЛИ УВЕЛИЧИТЬ ПРОИЗВОДИТЕЛЬНОСТЬ И СНИЗИТЬ УРОВЕНЬ БЕЗРАБОТИЦЫ. ЭТО ПРИВЕЛО К УЛУЧШЕНИЮ КАЧЕСТВА ЖИЗНИ НА МНОГИХ ПЛАНЕТАХ. ЛЮДИ НАДЕЮТСЯ НА ДАЛЬНЕЙШЕЕ РАЗВИТИЕ И ПРОГРЕСС.',
+            'НОВАЯ ТОРГОВАЯ СДЕЛКА ЗАКЛЮЧЕНА МЕЖДУ ПЛАНЕТАМИ. ЭТО ПРИВЕДЕТ К УЛУЧШЕНИЮ ЭКОНОМИЧЕСКИХ ОТНОШЕНИЙ И УВЕЛИЧЕНИЮ ОБОРОТА ТОВАРОВ. ПЛАНЕТЫ НАДЕЮТСЯ НА ДОЛГОСРОЧНОЕ СОТРУДНИЧЕСТВО И ВЗАИМОВЫГОДНЫЕ ОТНОШЕНИЯ.',
+            'ПРОИЗОШЕЛ ТЕХНОЛОГИЧЕСКИЙ ПРОРЫВ. НОВЫЕ ИЗОБРЕТЕНИЯ ПОЗВОЛЯТ СНИЗИТЬ ЗАТРАТЫ НА ПРОИЗВОДСТВО И УЛУЧШИТЬ КАЧЕСТВО ПРОДУКЦИИ. УЧЕНЫЕ НАДЕЮТСЯ НА ДАЛЬНЕЙШЕЕ РАЗВИТИЕ ТЕХНОЛОГИЙ И ИХ ПРИМЕНЕНИЕ В РАЗНЫХ СФЕРАХ ЖИЗНИ.',
+            'ГАЛАКТИЧЕСКИЙ МИР ДОСТИГНУТ. ПОСЛЕ ДЛИТЕЛЬНЫХ ПЕРЕГОВОРОВ ВСЕ РАСЫ ПРИШЛИ К СОГЛАШЕНИЮ. ТЕПЕРЬ ВСЕ МОГУТ ЖИТЬ В МИРЕ И СОТРУДНИЧЕСТВЕ. ЭТО НАЧАЛО НОВОЙ ЭРЫ В ИСТОРИИ ГАЛАКТИКИ.'
+        ];
+
+        let messageIndex = 0;
+
+        const updateMessage = () => {
+            statsContainer.textContent = messages[messageIndex];
+            messageIndex = (messageIndex + 1) % messages.length;
+        };
+
+        setInterval(updateMessage, 5000);
+        updateMessage();  // Initial call to set the first message
+    </script>
+</body>
+</html>
